@@ -1,5 +1,5 @@
 import streamlit as st
-from langgraph_backend_02 import chatbot
+from langgraph_backend_02 import chatbot, llm
 from langchain_core.messages import HumanMessage
 import uuid
 
@@ -8,17 +8,34 @@ import uuid
 def generate_thread_id():
     thread_id = str(uuid.uuid4())
     return thread_id
+
+
 def reset_chat():
     thread_id = generate_thread_id()
     st.session_state['thread_id'] = thread_id
     add_thread(st.session_state['thread_id'])
     st.session_state['message_history'] = []
+
+
 def add_thread(thread_id):
     if thread_id not in st.session_state['chat_threads']:
         st.session_state['chat_threads'].append(thread_id)
+
+
 def load_conversation(thread_id):
     state = chatbot.get_state(config={'configurable': {'thread_id': thread_id}})
     return state.values.get('messages', [])
+
+
+def conversation_title(first_message: str) -> str:
+    prompt = (
+        "Generate a short chat title, max 6 words, for this first user message. "
+        "Return only the title.\n\n"
+        f"Message: {first_message}"
+    )
+    response = llm.invoke(prompt)
+    return response.content.strip()
+
 
 
 #*******************Session setup********************
@@ -30,6 +47,10 @@ if 'thread_id' not in st.session_state:
 
 if 'chat_threads' not in st.session_state:
     st.session_state['chat_threads'] = []
+
+if 'thread_titles' not in st.session_state:
+    st.session_state['thread_titles'] = {}
+
 add_thread(st.session_state['thread_id'])
 
 #********************sidebar_ui*******************
@@ -41,8 +62,9 @@ if st.sidebar.button('New Chat'):
 
 st.sidebar.header('My Conversations')
 for thread_id in st.session_state['chat_threads'][::-1]:
+    title = st.session_state['thread_titles'].get(thread_id, "New conversation ")
 
-    if st.sidebar.button(str(thread_id)):
+    if st.sidebar.button(title, key=f"thread-{thread_id}"):
         st.session_state['thread_id'] = thread_id
         messages = load_conversation(thread_id)
 
@@ -69,6 +91,10 @@ user_input = st.chat_input('Type here')
 
 if user_input:
     config = {'configurable': {'thread_id': st.session_state['thread_id']}}
+    is_first_message = len(st.session_state['message_history']) == 0
+
+    if is_first_message:
+        st.session_state['thread_titles'][st.session_state['thread_id']] = conversation_title(user_input)
 
     # first add the message to message_history
     st.session_state['message_history'].append({'role': 'user', 'content': user_input})
